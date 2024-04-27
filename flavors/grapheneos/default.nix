@@ -10,8 +10,27 @@ let
   upstreamParams = import ./upstream-params.nix;
   grapheneOSRelease = "${config.apv.buildID}${upstreamParams.buildNumber}";
 
-  phoneDeviceFamilies = [ "crosshatch" "bonito" "coral" "sunfish" "redfin" "barbet" "bluejay" "pantah" ];
+  # -----------------------------------------
+  # Current device support by GrapheneOS. 
+  # * Make sure this is updated.
+  activeDeviceFamilies = [ "barbet" "bluejay" "pantah" ];
+  legacyDeviceFamilies = [ "coral" "sunfish" "bramble" "redfin" ];
+  obsoleteDeviceFamilies = [ "crosshatch" "bonito" ];
+  # ----------------------------------------
+
+  # -----------------------------------------
+  # Current Android Version support by GrapheneOS. 
+  # * Make sure this is updated.
+  supportedAndroidVersions = [ 13 14 ];
+  # ----------------------------------------
+
+  phoneDeviceFamilies = activeDeviceFamilies ++ legacyDeviceFamilies ++ obsoleteDeviceFamilies;
   supportedDeviceFamilies = phoneDeviceFamilies ++ [ "generic" ];
+
+  # Last GrapheneOS Build Number that had a build ID, before unification 
+  # Check https://grapheneos.org/releases#2023062300
+  lastLegacyTagBuildNumber = "2023061402";
+
   kernelPrefix = if config.androidVersion >= 13 then "kernel/android" else "kernel/google";
 
   kernelRepoName = {
@@ -28,7 +47,9 @@ let
     "panther" = "pantah";
     "cheetah" = "pantah";
   }.${config.device} or config.deviceFamily;
+
   kernelSourceRelpath = "${kernelPrefix}/${kernelRepoName}";
+
   kernelSources = lib.mapAttrs'
     (path: src: {
       name = "${kernelSourceRelpath}/${path}";
@@ -37,6 +58,31 @@ let
       };
     })
     (lib.importJSON (./kernel-repos/repo- + "${kernelRepoName}-${grapheneOSRelease}.json"));
+
+  isDeviceActive = elem config.deviceFamily activeDeviceFamilies;
+  isDeviceLegacy = elem config.deviceFamily legacyDeviceFamilies;
+  isDeviceObsolete = elem config.deviceFamily obsoleteDeviceFamilies;
+  isAndroidVersionSupported = elem config.androidVersion supportedAndroidVersions;
+  isNewTagBuild = (lib.strings.toInt upstreamParams.buildNumber) > (lib.strings.toInt lastLegacyTagBuildNumber);
+
+  warnings = (
+    optional ((config.device != null) && !(elem config.deviceFamily phoneDeviceFamilies))
+      "${config.device} is not a supported device for GrapheneOS"
+  )
+
+  ++ (
+    optional (!(isAndroidVersionSupported)) "Unsupported androidVersion (!= 13 or 14) for GrapheneOS"
+  )
+
+  ++ (
+    optional (isDeviceLegacy) "[${lib.concatStringSep ", " legacyDeviceFamilies}] are considered legacy devices, only receive basic rebased updates from the AOSP project, and do not receive direct GrapheneOS support"
+  );
+
+  deviceTest =
+    if isDeviceObsolete
+    then throw "[${lib.concatStringSep ", " obsoleteDeviceFamilies}] are considered obsolete devices and grapheneos can't be built for them"
+    else true;
+
 in
 mkIf (config.flavor == "grapheneos") (mkMerge [
   rec {
@@ -53,11 +99,23 @@ mkIf (config.flavor == "grapheneos") (mkMerge [
     };
     source.dirs = (lib.importJSON (./. + "/repo-${grapheneOSRelease}.json") // kernelSources);
 
-    # TODO: re-add the legacy devices
     apv.enable = mkIf (config.androidVersion <= 12 && elem config.deviceFamily phoneDeviceFamilies) (mkDefault true);
-    apv.buildID = mkDefault (if (elem config.device [ "sunfish" "bramble" "redfin" "barbet" "oriole" "raven" "bluejay" "panther" "cheetah" ])
-    then ""
-    else "TP1A.221005.002.B2");
+
+
+
+    apv.buildID = mkDefault (
+      if (elem config.device (activeDeviceFamilies ++ legacyDeviceFamilies))
+      then
+        (
+          # Legacy devices get AOSP patches rebased on their tag
+          # therefore only actively supported devices get this blanked
+          if isNewTagBuild && isDeviceActive
+          then ""
+          else "TQ3A.230605.012."
+        )
+      else "TP1A.221005.002.B2."
+    );
+
     adevtool.enable = mkIf (config.androidVersion >= 13 && elem config.deviceFamily phoneDeviceFamilies) (mkDefault true);
     adevtool.buildID = config.apv.buildID;
 
@@ -65,18 +123,9 @@ mkIf (config.flavor == "grapheneos") (mkMerge [
     source.manifest.url = mkDefault "https://github.com/GrapheneOS/platform_manifest.git";
     source.manifest.rev = mkDefault "refs/tags/${grapheneOSRelease}";
 
-    warnings = (optional ((config.device != null) && !(elem config.deviceFamily supportedDeviceFamilies))
-      "${config.device} is not a supported device for GrapheneOS")
-    ++ (optional (!(elem config.androidVersion [ 13 ])) "Unsupported androidVersion (!= 13) for GrapheneOS")
-    ++ (optional (config.deviceFamily == "crosshatch") "crosshatch/blueline are considered legacy devices and receive only extended support updates from GrapheneOS and no longer receive vendor updates from Google");
   }
   {
-    # Upstream tag doesn't always set the BUILD_ID and platform security patch correctly for legacy crosshatch/blueline
-    source.dirs."build/make".postPatch = mkIf (elem config.device [ "crosshatch" "blueline" ]) ''
-      echo BUILD_ID=SP1A.210812.016.C1 > core/build_id.mk
-      sed -i 's/PLATFORM_SECURITY_PATCH := 2021-11-05/PLATFORM_SECURITY_PATCH := 2021-11-01/g' core/version_defaults.mk
-    '';
-
+    # ? Is Soong Still supported by this project?
     # Disable setting SCHED_BATCH in soong. Brings in a new dependency and the nix-daemon could do that anyway.
     source.dirs."build/soong".patches = [
       (pkgs.fetchpatch {
@@ -86,6 +135,7 @@ mkIf (config.flavor == "grapheneos") (mkMerge [
       })
     ];
 
+    # ? Is this still necesary? 
     # hack to make sure the out directory remains writeable after copying files/directories from /nix/store mounted sources
     source.dirs."prebuilts/build-tools".postPatch = mkIf (config.androidVersion >= 13) ''
       pushd path/linux-x86
@@ -97,10 +147,11 @@ mkIf (config.flavor == "grapheneos") (mkMerge [
     '';
 
     # No need to include kernel sources in Android source trees since we build separately
-    source.dirs."${kernelPrefix}/marlin".enable = false;
-    source.dirs."${kernelPrefix}/wahoo".enable = false;
-    source.dirs."${kernelPrefix}/crosshatch".enable = false;
-    source.dirs."${kernelPrefix}/bonito".enable = false;
+    # * Commented out unsupported devices
+    #source.dirs."${kernelPrefix}/marlin".enable = false;
+    #source.dirs."${kernelPrefix}/wahoo".enable = false;
+    #source.dirs."${kernelPrefix}/crosshatch".enable = false;
+    #source.dirs."${kernelPrefix}/bonito".enable = false;
     source.dirs."${kernelPrefix}/coral".enable = false;
     source.dirs."${kernelPrefix}/sunfish".enable = false;
     source.dirs."${kernelPrefix}/redbull".enable = false;
@@ -123,6 +174,7 @@ mkIf (config.flavor == "grapheneos") (mkMerge [
     removedProductPackages = [ "TrichromeWebView" "TrichromeChrome" "webview" ];
     source.dirs."external/vanadium".enable = false;
 
+    # ? Is this up to date?
     # Override included android-prepare-vendor, with the exact version from
     # GrapheneOS. Unfortunately, Doing it this way means we don't cache apv
     # output across vanilla/grapheneos, even if they are otherwise identical.

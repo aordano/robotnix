@@ -13,7 +13,6 @@ _KERNEL_PREFIX=${KERNEL_PREFIX:-kernel/google}
 args=(
     --cache-search-path ../../
     --ref-type tag
-    --project-fetch-submodules "${_KERNEL_PREFIX}/crosshatch"
     --project-fetch-submodules "${_KERNEL_PREFIX}/coral"
     --project-fetch-submodules "${_KERNEL_PREFIX}/sunfish"
     --project-fetch-submodules "${_KERNEL_PREFIX}/redbull"
