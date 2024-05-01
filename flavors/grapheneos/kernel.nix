@@ -50,8 +50,6 @@ let
   stdenv = if (config.androidVersion >= 13) then pkgs.stdenv else pkgs.stdenv;
 
   repoName = {
-    "sargo" = "crosshatch";
-    "bonito" = "crosshatch";
     "sunfish" = "coral";
     "bramble" = "redbull";
     "redfin" = "redbull";
@@ -62,7 +60,6 @@ let
   sourceRelpath = "${kernelPrefix}/${repoName}";
 
   builtKernelName = {
-    "sargo" = "bonito";
     "flame" = "coral";
     "sunfish" = "coral";
     "bluejay" = "bluejay";
@@ -89,6 +86,7 @@ let
       nukeReferences
       ripgrep
       glibc.dev.dev.dev
+      glibc_multi.dev
       pkg-config
       autoPatchelfHook
       coreutils
@@ -103,6 +101,7 @@ let
     ] ++ lib.optionals postRaviole [
       git
       elfutils
+      lld
     ];
 
     unpackPhase = ''

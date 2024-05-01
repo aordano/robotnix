@@ -93,7 +93,7 @@ in
   # in the future:
   inherit (config.build)
     targetFiles unsignedTargetFiles signedTargetFiles
-    ota incrementalOta img factoryImg bootImg recoveryImg otaDir
+    ota incrementalOta img factoryImg bootImg recoveryImg otaDir kernel
     releaseScript generateKeysScript verifyKeysScript
     emulator;
 }
