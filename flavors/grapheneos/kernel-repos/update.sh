@@ -11,9 +11,8 @@ export TMPDIR=/tmp
 args=(
     --cache-search-path ../../../
     --ref-type tag
-    --out "repo-${DEVICE_FAMILY}-${TAG}.json"
+    --out "repo-${DEVICE_FAMILY}-$@.json"
     "https://github.com/GrapheneOS/kernel_manifest-${DEVICE_FAMILY}"
-    "${TAG}"
     "$@"
 )
 

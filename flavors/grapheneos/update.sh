@@ -13,17 +13,15 @@ _KERNEL_PREFIX=${KERNEL_PREFIX:-kernel/google}
 args=(
     --cache-search-path ../../
     --ref-type tag
-    --project-fetch-submodules "${_KERNEL_PREFIX}/coral"
-    --project-fetch-submodules "${_KERNEL_PREFIX}/sunfish"
-    --project-fetch-submodules "${_KERNEL_PREFIX}/redbull"
-    --project-fetch-submodules "${_KERNEL_PREFIX}/barbet"
-    --project-fetch-submodules "${_KERNEL_PREFIX}/raviole"
+    #--project-fetch-submodules "${_KERNEL_PREFIX}/coral"
+    #--project-fetch-submodules "${_KERNEL_PREFIX}/sunfish"
+    #--project-fetch-submodules "${_KERNEL_PREFIX}/redbull"
+    #--project-fetch-submodules "${_KERNEL_PREFIX}/barbet"
+    #--project-fetch-submodules "${_KERNEL_PREFIX}/raviole"
     --project-fetch-submodules "${_KERNEL_PREFIX}/bluejay"
-    --project-fetch-submodules "${_KERNEL_PREFIX}/pantah"
+    #--project-fetch-submodules "${_KERNEL_PREFIX}/pantah"
     "https://github.com/GrapheneOS/platform_manifest"
     "$@"
 )
-
-export TMPDIR=/tmp
 
 ../../scripts/mk_repo_file.py "${args[@]}"
