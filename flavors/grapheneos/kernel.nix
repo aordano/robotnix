@@ -6,7 +6,21 @@ let
 
   postRedfin = lib.elem config.deviceFamily [ "redfin" "barbet" "raviole" "bluejay" "pantah" ];
   postRaviole = lib.elem config.deviceFamily [ "raviole" "bluejay" "pantah" ];
-  clangVersion = if postRaviole then "r450784e" else "r416183b";
+
+  # Gotten from https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+/master/README.md
+  # TODO modularize in a config file
+  clangVersion = "${
+    lib.optionalString (config.androidVersion == 14) "r487747c"
+    }${
+    lib.optionalString (config.androidVersion == 13) "r450784d"  
+    }${
+    lib.optionalString (config.androidVersion == 12) "r416183b1"
+    }${
+    lib.optionalString (config.androidVersion == 11) "r383902b1"  
+    }${
+    lib.optionalString (config.androidVersion == 10) "r353983c1"
+    }";
+
   buildScriptFor = {
     "coral" = "build/build.sh";
     "sunfish" = "build/build.sh";
@@ -46,8 +60,10 @@ let
     (lib.mapAttrsToList unpackCmd (lib.filterAttrs (name: src: (lib.elem name sources)) config.source.dirs)));
 
   # the kernel build scripts deeply assume clang as of android 13
-  llvm = pkgs.llvmPackages_13;
-  stdenv = if (config.androidVersion >= 13) then pkgs.stdenv else pkgs.stdenv;
+  # The version of related LLVM packages to bring is linked to the correct clang version used.
+  # ? Do newer llvm versions have adequate support for older clang versions? do we really need to change this depending on which clang one uses?
+  # TODO select correct version based off the android version being built
+  llvm = pkgs.llvmPackages_15;
 
   repoName = {
     "sunfish" = "coral";
