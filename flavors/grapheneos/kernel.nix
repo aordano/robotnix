@@ -4,6 +4,7 @@ let
   inherit (lib)
     mkIf mkMerge mkDefault;
 
+  # TODO modularize in a config file
   postRedfin = lib.elem config.deviceFamily [ "redfin" "barbet" "raviole" "bluejay" "pantah" ];
   postRaviole = lib.elem config.deviceFamily [ "raviole" "bluejay" "pantah" ];
 
@@ -21,6 +22,7 @@ let
     lib.optionalString (config.androidVersion == 10) "r353983c1"
     }";
 
+  # TODO modularize in a config file
   buildScriptFor = {
     "coral" = "build/build.sh";
     "sunfish" = "build/build.sh";
@@ -29,33 +31,47 @@ let
     "bluejay" = "build_bluejay.sh";
     "pantah" = "build_cloudripper.sh";
   };
-  buildScript = if (config.androidVersion >= 13) then buildScriptFor.${config.deviceFamily} else "build.sh";
-  realBuildScript = if (config.androidVersion >= 13) then "build/build.sh" else "build.sh";
-  kernelPrefix = if (config.androidVersion >= 13) then "kernel/android" else "kernel/google";
-  grapheneOSRelease = "${config.apv.buildID}.${config.buildNumber}";
 
+  buildScript = if (config.androidVersion >= 13) then buildScriptFor.${config.deviceFamily} else "build.sh";
+  kernelPrefix = if (config.androidVersion >= 13) then "kernel/android" else "kernel/google";
+
+  grapheneOSRelease = config.grapheneOSRelease;
+
+  # This is for the old compilation script used for 5th and 4th gen pixels.
   buildConfigVar = "private/msm-google/build.config.${if config.deviceFamily != "redfin" then config.deviceFamily else "redbull"}${lib.optionalString (config.deviceFamily == "redfin") ".vintf"}";
+
   subPaths = prefix: (lib.filter (name: (lib.hasPrefix prefix name)) (lib.attrNames config.source.dirs));
   kernelSources = subPaths sourceRelpath;
+
+  # ? Maybe this unpacking stuff should be modularized to another file. As it stands it is not immediately clear what this functions do or how they are structured.
+
   unpackSrc = name: src: ''
     shopt -s dotglob
     rm -rf ${name}
     mkdir -p $(dirname ${name})
     cp -r ${src} ${name}
   '';
+
+  # TODO: Style - Hard to parse
   linkSrc = name: c: lib.optionalString (lib.hasAttr "linkfiles" c) (lib.concatStringsSep "\n" (map
     ({ src, dest }: ''
       mkdir -p $(dirname ${sourceRelpath}/${dest})
       ln -rs ${name}/${src} ${sourceRelpath}/${dest}
     '')
     c.linkfiles));
+
+  # TODO: Style - Hard to parse
   copySrc = name: c: lib.optionalString (lib.hasAttr "copyfiles" c) (lib.concatStringsSep "\n" (map
     ({ src, dest }: ''
       mkdir -p $(dirname ${sourceRelpath}/${dest})
       cp -r ${name}/${src} ${sourceRelpath}/${dest}
     '')
     c.copyfiles));
+
+  # TODO: Style - Hard to parse
   unpackCmd = name: c: lib.concatStringsSep "\n" [ (unpackSrc name c.src) (linkSrc name c) (copySrc name c) ];
+
+  # TODO: Style - Hard to parse
   unpackSrcs = sources: (lib.concatStringsSep "\n"
     (lib.mapAttrsToList unpackCmd (lib.filterAttrs (name: src: (lib.elem name sources)) config.source.dirs)));
 
@@ -65,6 +81,11 @@ let
   # TODO select correct version based off the android version being built
   llvm = pkgs.llvmPackages_15;
 
+  # ? A choice between stdenv or stdenv? I'll comment it out until this is clear.
+  #stdenv = if (config.androidVersion >= 13) then pkgs.stdenv else pkgs.stdenv;
+  stdenv = pkgs.stdenv;
+
+  # TODO modularize in a config file
   repoName = {
     "sunfish" = "coral";
     "bramble" = "redbull";
@@ -75,6 +96,7 @@ let
   }.${config.device} or config.deviceFamily;
   sourceRelpath = "${kernelPrefix}/${repoName}";
 
+  # TODO modularize in a config file
   builtKernelName = {
     "flame" = "coral";
     "sunfish" = "coral";
@@ -82,7 +104,17 @@ let
     "panther" = "pantah";
     "cheetah" = "pantah";
   }.${config.device} or config.device;
+
+  # ? Why redfin has a different path?
   builtRelpath = "device/google/${builtKernelName}-kernel${lib.optionalString (config.deviceFamily == "redfin" && config.variant != "user") "/vintf"}";
+
+  # * Older builds have some issues with glibc and missing symbols. I leave this here commented to (somehow) later on configure older builds to use older packages.
+  # oldPkgs = import
+  #   (builtins.fetchTarball {
+  #     url = "https://github.com/NixOS/nixpkgs/archive/1b7a6a6e57661d7d4e0775658930059b77ce94a4.tar.gz";
+  #     sha256 = "sha256:12k1yz0z6qjl0002lsay2cbwvrwqfy23w611zkh6wyjn97nqqvjc";
+  #   })
+  #   { };
 
   kernel = config.build.mkAndroid (rec {
     name = "grapheneos-${builtKernelName}-kernel";
@@ -107,15 +139,16 @@ let
       autoPatchelfHook
       coreutils
       gawk
-    ] ++ lib.optionals postRedfin [
+    ] ++ lib.optionals (config.androidVersion >= 12) [
       python
       python3
       bison
       flex
       cpio
       zlib
-    ] ++ lib.optionals postRaviole [
+    ] ++ lib.optionals (config.androidVersion >= 13) [
       git
+      #libelf
       elfutils
       lld
     ];
@@ -135,15 +168,19 @@ let
       for d in `find . -type d -name '*lib*'`; do
         addAutoPatchelfSearchPath $d
       done
-      autoPatchelf prebuilts${lib.optionalString (!postRaviole) "-master"}/clang/host/linux-x86/clang-${clangVersion}/bin
+      autoPatchelf prebuilts${lib.optionalString (config.androidVersion <= 13) "-master"}/clang/host/linux-x86/clang-${clangVersion}/bin
       sed -i '/unset LD_LIBRARY_PATH/d' build/_setup_env.sh
     '';
+
     preBuild = ''
       mkdir -p ../../../${builtRelpath} out
       chmod a+w -R ../../../${builtRelpath} out
+
+      # * The current way of fetching resources from the processed manifest misses something and this directory and symlink are not present after fetching everything
+      mkdir -p private/gs-google/arch/arm64/boot/dts/google/devices
+      ln -s -r private/devices/google/${builtKernelName}/dts private/gs-google/arch/arm64/boot/dts/google/devices/${builtKernelName}
     '';
 
-    # TODO: add KBUILD env vars for pre-redfin on android 13
     buildPhase =
       let
         useCodenameArg = config.androidVersion <= 12;
@@ -152,23 +189,29 @@ let
         set -eo pipefail
         ${preBuild}
 
-        ${if postRaviole
+        ${
+          # ! This is missing KBUILD envvars for pre-redfin devices. 
+          # TODO: add KBUILD env vars for pre-redfin
+          if postRaviole
           then "LTO=full BUILD_AOSP_KERNEL=1 cflags='--sysroot /usr '"
-          else "BUILD_CONFIG=${buildConfigVar} HOSTCFLAGS='--sysroot /usr '"} \
-          LD_LIBRARY_PATH="/usr/lib/:/usr/lib32/" \
-          ./${buildScript} \
-          ${lib.optionalString useCodenameArg builtKernelName}
+          else "BUILD_CONFIG=${buildConfigVar} HOSTCFLAGS='--sysroot /usr '"
+        } \
+        LD_LIBRARY_PATH="/usr/lib/:/usr/lib32/" \
+        ./${buildScript} \
+        ${lib.optionalString useCodenameArg builtKernelName}
 
         ${postBuild}
       '';
 
     postBuild = ''
-      cp -r out/${if postRaviole
-                  then "mixed"
-                  else
-                    if postRedfin
-                    then "android-msm-pixel-4.19"
-                    else "android-msm-pixel-4.14"}/dist/* ../../../${builtRelpath}
+      cp -r out/${
+        if postRaviole
+        then "mixed"
+        else 
+          if postRedfin
+          then "android-msm-pixel-4.19"
+          else "android-msm-pixel-4.14"
+      }/dist/* ../../../${builtRelpath}
     '';
 
     installPhase = ''
