@@ -55,6 +55,13 @@ in
       example = "marlin";
     };
 
+    buildID = mkOption {
+      default = null;
+      type = types.nullOr types.str;
+      description = "Build ID to get vendor sources from. Check https://source.android.com/docs/setup/reference/build-numbers#source-code-tags-and-builds";
+      example = "AP1A.240405.002";
+    };
+
     deviceDisplayName = mkOption {
       default = null;
       type = types.nullOr types.str;
@@ -126,7 +133,7 @@ in
     };
 
     androidVersion = mkOption {
-      default = 12;
+      default = 14;
       type = types.int;
       description = "Used to select which Android version to use";
     };
@@ -252,7 +259,8 @@ in
         "11" = 30;
         "12" = 32;
         "13" = 33;
-      }.${builtins.toString config.androidVersion} or 33;
+        "14" = 34;
+      }.${builtins.toString config.androidVersion} or 34;
 
       buildNumber = mkOptionDefault (formatSecondsSinceEpoch config.buildDateTime);
 

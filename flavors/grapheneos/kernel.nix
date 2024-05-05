@@ -33,9 +33,10 @@ let
   };
 
   buildScript = if (config.androidVersion >= 13) then buildScriptFor.${config.deviceFamily} else "build.sh";
-  kernelPrefix = if (config.androidVersion >= 13) then "kernel/android" else "kernel/google";
 
-  grapheneOSRelease = config.grapheneOSRelease;
+  # TODO modularize in a config file
+  # This is shared with default.nix
+  kernelPrefix = if (config.androidVersion >= 13) then "kernel/android" else "kernel/google";
 
   # This is for the old compilation script used for 5th and 4th gen pixels.
   buildConfigVar = "private/msm-google/build.config.${if config.deviceFamily != "redfin" then config.deviceFamily else "redbull"}${lib.optionalString (config.deviceFamily == "redfin") ".vintf"}";
@@ -86,6 +87,7 @@ let
   stdenv = pkgs.stdenv;
 
   # TODO modularize in a config file
+  # This is shared with default.nix
   repoName = {
     "sunfish" = "coral";
     "bramble" = "redbull";
@@ -94,6 +96,9 @@ let
     "panther" = "pantah";
     "cheetah" = "pantah";
   }.${config.device} or config.deviceFamily;
+
+  # TODO modularize in a config file
+  # This is shared with default.nix
   sourceRelpath = "${kernelPrefix}/${repoName}";
 
   # TODO modularize in a config file

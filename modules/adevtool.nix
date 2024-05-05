@@ -72,7 +72,7 @@ in
     buildID = mkOption {
       type = types.str;
       description = "Build ID associated with the upstream img/ota (used to select images)";
-      default = config.apv.buildID;
+      default = "AP1A.240405.002";
     };
 
     hash = mkOption {
